@@ -12,7 +12,7 @@ class CSVParser(object):
     """
 
     csvfile = []
-    charset = ''
+    charset = 'utf-8'
     filehandle = None
     check_cols = False
     string_types = (type(u''), type(''))
@@ -38,22 +38,23 @@ class CSVParser(object):
 
     def open_csvfile(self, datafile):
         """ Detect file encoding and open appropriately """
-        self.filehandle = open(datafile, 'rb')
-        if not self.charset:
-            import chardet
-            diagnose = chardet.detect(self.filehandle.read())
-            self.charset = diagnose['encoding']
+        # self.filehandle = open(datafile, 'rt')
+        # if not self.charset:
+        #     import chardet
+        #     diagnose = chardet.detect(self.filehandle.read())
+        #     self.charset = diagnose['encoding']
         try:
-            csvfile = codecs.open(datafile, 'r', self.charset)
+            self.charset = 'utf-8'
+            # csvfile = codecs.open(datafile, 'r', self.charset)
         except IOError:
             self.error('Could not open specified csv file, %s, or it does not exist' % datafile, 0)
         else:
             try:
-                csvgenerator = self.charset_csv_reader(csv_data=csvfile, charset=self.charset)
+                csvgenerator = self.charset_csv_reader(csv_data=datafile, charset=self.charset)
                 rows = [row for row in csvgenerator]
                 return self.list_rows(rows)
-            except:
-                rows = []
+            except Exception as exp:
+                raise
             # Sometimes encoding is too mashed to be able to open the file as text with csv_reader
             # ... especially in Python 3 - its a lot stricter
             # so reopen as raw unencoded and just try and get lines out one by one
@@ -106,11 +107,15 @@ class CSVParser(object):
 
     def charset_csv_reader(self, csv_data, dialect=csv.excel,
                            charset='utf-8', **kwargs):
-        csv_reader = csv.reader(self.charset_encoder(csv_data, charset),
-                                dialect=dialect, **kwargs)
-        for row in csv_reader:
-            # decode charset back to Unicode, cell by cell:
-            yield [unicode(cell, charset) for cell in row]
+        with open(csv_data, 'r') as f:
+            reader = csv.reader(f)
+            for row in reader:
+                yield row
+        # csv_reader = csv.reader(self.charset_encoder(csv_data, charset),
+        #                         dialect=dialect, **kwargs)
+        # for row in csv_reader:
+        #     # decode charset back to Unicode, cell by cell:
+        #     yield [unicode(cell, charset) for cell in row]
 
     def charset_encoder(self, csv_data, charset='utf-8'):
         """ Check passed a valid charset then encode """

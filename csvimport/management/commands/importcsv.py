@@ -6,7 +6,7 @@ from datetime import datetime
 import codecs
 import chardet
 
-from django.db import DatabaseError
+from django.db import DatabaseError, transaction
 from django.core.exceptions import ObjectDoesNotExist
 from django.core.management.base import LabelCommand, BaseCommand
 from optparse import make_option
@@ -82,7 +82,7 @@ class Command(LabelCommand, CSVParser):
                                    (column1=field1(ForeignKey|field),column2=field2(ForeignKey|field), ...)
                                    for the import (use none for no names -> col_#)'''),
                make_option('--defaults', default='',
-                           help='''Provide comma separated defaults for the import 
+                           help='''Provide comma separated defaults for the import
                                    (field1=value,field3=value, ...)'''),
                make_option('--model', default='iisharing.Item',
                            help='Please provide the model to import to'),
@@ -150,7 +150,10 @@ class Command(LabelCommand, CSVParser):
         if modelname.find('.') > -1:
             app_label, model = modelname.rsplit('.', 1)
         if uploaded:
-            self.csvfile = self.open_csvfile(uploaded.path)
+            if hasattr(uploaded, 'path'):
+                self.csvfile = self.open_csvfile(uploaded.path)
+            else:
+                self.csvfile = self.open_csvfile(uploaded)
         else:
             failed = self.check_filesystem(csvfile)
             if failed:
@@ -180,7 +183,7 @@ class Command(LabelCommand, CSVParser):
         self.nameindexes = bool(nameindexes)
         self.file_name = csvfile
         self.deduplicate = deduplicate
-        return 
+        return
 
     def run(self, logid=0):
         """ Run the csvimport """
@@ -216,22 +219,25 @@ class Command(LabelCommand, CSVParser):
                 logger.info("Import %s %i", self.model.__name__, counter)
             counter += 1
 
-            model_instance = self.model()
+            try:
+                model_instance = self.model.objects.get(id=row[0])
+            except Exception:
+                model_instance = self.model()
             model_instance.csvimport_id = csvimportid
 
             for (column, field, foreignkey) in self.mappings:
                 if self.nameindexes:
                     column = indexes.index(column)
                 else:
-                    column = int(column)-1
+                    column = int(column) - 1
 
-                if foreignkey:
+                if foreignkey and row[column]:
                     row[column] = self.insert_fkey(foreignkey, row[column])
 
                 if self.debug:
                     loglist.append('%s.%s = "%s"' % (self.model.__name__,
                                                           field, row[column]))
-                try:    
+                try:
                     row[column] = self.type_clean(field, row[column], loglist, i)
                 except:
                     pass
@@ -273,7 +279,8 @@ class Command(LabelCommand, CSVParser):
             try:
                 importing_csv.send(sender=model_instance,
                                    row=dict(zip(self.csvfile[:1][0], row)))
-                model_instance.save()
+                with transaction.atomic():
+                    model_instance.save()
                 imported_csv.send(sender=model_instance,
                                   row=dict(zip(self.csvfile[:1][0], row)))
             except DatabaseError as err:
@@ -299,7 +306,7 @@ class Command(LabelCommand, CSVParser):
         rowcount = self.model.objects.count() - rowcount
         countmsg = 'Imported %s rows to %s' % (rowcount, self.model.__name__)
         if CSVIMPORT_LOG == 'logger':
-            logger.info(countmsg)            
+            logger.info(countmsg)
         if self.loglist:
             self.loglist.append(countmsg)
             self.props = {'file_name':self.file_name,
@@ -396,6 +403,7 @@ class Command(LabelCommand, CSVParser):
             foreign keys, therefore foreign data
         """
         fk_key, fk_field = foreignkey
+        fk_field = u'id'
         if fk_key and fk_field:
             try:
                 new_app_label = ContentType.objects.get(model=fk_key).app_label
