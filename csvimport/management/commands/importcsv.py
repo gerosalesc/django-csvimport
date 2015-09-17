@@ -138,8 +138,7 @@ class Command(LabelCommand, CSVParser):
             save_csvimport(self.props, self)
         # can cause memoryerror if its too big
         try:
-            for error in errors:
-                self.loglist.append(errors)
+            self.loglist.extend(errors)
         except:
             pass
         return
@@ -149,7 +148,7 @@ class Command(LabelCommand, CSVParser):
         """ Setup up the attributes for running the import """
         self.defaults = self.set_mappings(defaults)
         if modelname.find('.') > -1:
-            app_label, model = modelname.split('.')
+            app_label, model = modelname.rsplit('.', 1)
         if uploaded:
             self.csvfile = self.open_csvfile(uploaded.path)
         else:
@@ -419,8 +418,8 @@ class Command(LabelCommand, CSVParser):
         #TODO fix to find related field name rather than assume second field
         if not key.endswith('_id'):
             if field.__class__ == models.ForeignKey:
-                key += '(%s|%s)' % (field.related.parent_model.__name__,
-                                    field.related.parent_model._meta.fields[1].name,)
+                key += '(%s|%s)' % (field.related.model.__name__,
+                                    field.related.model._meta.fields[1].name,)
         return key
 
     def error(self, message, type=1):
